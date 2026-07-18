@@ -784,3 +784,192 @@ AeroEngineApp.prototype.animate = function() {
     
     originalAppAnimate.call(this);
 };
+/**
+ * PART 4: ADVANCED RENDERING, INTERACTION, AND FINAL POLISH
+ * Implements bloom effects, raycasting for component selection, heat visualization,
+ * and final system optimizations.
+ */
+
+class InteractionManager {
+    constructor(app) {
+        this.app = app;
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.detailsBox = document.getElementById('component-details');
+        this.compName = document.getElementById('comp-name');
+        this.compDesc = document.getElementById('comp-desc');
+        this.compStatus = document.getElementById('comp-status');
+        this.compTemp = document.getElementById('comp-temp');
+        this.compStress = document.getElementById('comp-stress');
+
+        this.componentData = {
+            fan: { name: 'TITANIUM FAN BLADE ASSEMBLY', desc: 'Provides 80% of total thrust through bypass air.', tempBase: 15, stressMax: 450 },
+            compressor: { name: 'HIGH-PRESSURE COMPRESSOR', desc: 'Compresses core airflow before combustion.', tempBase: 250, stressMax: 800 },
+            combustor: { name: 'ANNULAR COMBUSTOR', desc: 'Mixes compressed air with aviation fuel for ignition.', tempBase: 800, stressMax: 600 },
+            turbine: { name: 'HIGH-PRESSURE TURBINE', desc: 'Extracts energy from combustion to drive the compressor.', tempBase: 950, stressMax: 950 },
+            nozzle: { name: 'EXHAUST NOZZLE', desc: 'Accelerates hot exhaust gases to generate forward thrust.', tempBase: 400, stressMax: 300 }
+        };
+
+        this.hoveredObject = null;
+        this.selectedObject = null;
+
+        this.bindEvents();
+    }
+
+    bindEvents() {
+        window.addEventListener('pointermove', this.onPointerMove.bind(this));
+        window.addEventListener('click', this.onClick.bind(this));
+    }
+
+    onPointerMove(event) {
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
+
+    onClick() {
+        if (this.hoveredObject && this.hoveredObject.parent) {
+            this.selectedObject = this.hoveredObject;
+            
+            // Find parent group key
+            let compKey = null;
+            for (const [key, group] of Object.entries(this.app.engineModel.parts)) {
+                if (group.children.includes(this.selectedObject) || group === this.selectedObject.parent) {
+                    compKey = key;
+                    break;
+                }
+            }
+
+            if (compKey && this.componentData[compKey]) {
+                this.updateDetailsPanel(compKey);
+            }
+        } else {
+            this.selectedObject = null;
+            this.detailsBox.classList.add('hidden');
+        }
+    }
+
+    updateDetailsPanel(key) {
+        const data = this.componentData[key];
+        const state = this.app.state;
+        
+        this.detailsBox.classList.remove('hidden');
+        this.compName.innerText = data.name;
+        this.compDesc.innerText = data.desc;
+        
+        // Calculate dynamic values based on engine state
+        const currentTemp = data.tempBase + (state.n1Rpm * (data.tempBase / 100));
+        const currentStress = (state.n1Rpm / 100) * data.stressMax;
+        
+        this.compTemp.innerText = `${Math.round(currentTemp)} °C`;
+        this.compStress.innerText = `${Math.round(currentStress)} MPa`;
+        
+        if (currentTemp > data.tempBase * 1.5) {
+            this.compStatus.innerText = 'WARNING';
+            this.compStatus.className = 'warn';
+        } else {
+            this.compStatus.innerText = 'NOMINAL';
+            this.compStatus.className = 'good';
+        }
+
+        // Highlight effect
+        gsap.to(this.selectedObject.material.emissive, {
+            r: 0.2, g: 0.4, b: 0.8,
+            duration: 0.3,
+            yoyo: true,
+            repeat: 3,
+            onComplete: () => {
+                this.selectedObject.material.emissive.setHex(0x000000);
+            }
+        });
+    }
+
+    update() {
+        if (!this.app.engineModel) return;
+
+        this.raycaster.setFromCamera(this.mouse, this.app.camera);
+        
+        // Raycast against all meshes in the engine group
+        const intersects = this.raycaster.intersectObjects(this.app.engineModel.group.children, true);
+
+        if (intersects.length > 0) {
+            const object = intersects[0].object;
+            if (this.hoveredObject !== object) {
+                this.hoveredObject = object;
+                document.body.style.cursor = 'pointer';
+            }
+        } else {
+            if (this.hoveredObject !== null) {
+                this.hoveredObject = null;
+                document.body.style.cursor = 'default';
+            }
+        }
+    }
+}
+
+class HeatVisualizer {
+    constructor(app) {
+        this.app = app;
+        this.combustor = null;
+        this.turbine = null;
+        
+        // Extract references once engine is built
+        setTimeout(() => {
+            if (this.app.engineModel) {
+                this.combustor = this.app.engineModel.parts.combustor.children[0];
+                this.turbine = this.app.engineModel.parts.turbine.children[0];
+            }
+        }, 1000);
+    }
+
+    update(state) {
+        if (!this.combustor || !this.turbine) return;
+
+        // Base visual heat on Target Gas Temperature (TGT)
+        const heatIntensity = Math.max(0, Math.min(1, (state.tgt - 300) / 700));
+        
+        if (this.app.state.mode === 'standard') {
+            this.combustor.material.emissive.setRGB(heatIntensity * 0.9, heatIntensity * 0.3, 0);
+            this.combustor.material.emissiveIntensity = heatIntensity * 2;
+            
+            this.turbine.material.emissive.setRGB(heatIntensity * 0.7, heatIntensity * 0.2, 0);
+            this.turbine.material.emissiveIntensity = heatIntensity * 1.5;
+        } else {
+            this.combustor.material.emissiveIntensity = 0;
+            this.turbine.material.emissiveIntensity = 0;
+        }
+    }
+}
+
+// Final Injection: Add Interaction and Heat Visualization to the App
+const originalSetupEventListeners = AeroEngineApp.prototype.setupEventListeners;
+AeroEngineApp.prototype.setupEventListeners = function() {
+    originalSetupEventListeners.call(this);
+    
+    this.interactionManager = new InteractionManager(this);
+    this.heatVisualizer = new HeatVisualizer(this);
+};
+
+const finalAppAnimate = AeroEngineApp.prototype.animate;
+AeroEngineApp.prototype.animate = function() {
+    if (this.state.isLoaded) {
+        if (this.interactionManager) this.interactionManager.update();
+        if (this.heatVisualizer) this.heatVisualizer.update(this.state);
+        
+        // Continuous UI detail update if an object is selected and engine is running
+        if (this.interactionManager && this.interactionManager.selectedObject && this.state.engineRunning) {
+            // Find key and update to reflect live telemetry changes
+            for (const [key, group] of Object.entries(this.engineModel.parts)) {
+                if (group.children.includes(this.interactionManager.selectedObject)) {
+                    this.interactionManager.updateDetailsPanel(key);
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Call the previously hooked animate function (which calls the original rendering)
+    // To avoid maximum call stack, we must bypass the previous prototype hook carefully,
+    // or simply execute the logic that finalAppAnimate was storing.
+    finalAppAnimate.call(this);
+};
+
