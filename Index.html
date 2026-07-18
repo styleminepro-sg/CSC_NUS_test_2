@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOEING AEROENGINE EXPLORER</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+<body>
+    <div id="loading-screen">
+        <div class="loader">
+            <div class="spinner"></div>
+            <h2>INITIALIZING AEROENGINE SYSTEM</h2>
+            <p id="loading-text">Loading Core Architecture...</p>
+            <div class="progress-bar"><div id="progress"></div></div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <header>
+            <div class="logo">BOEING <span>AEROENGINE EXPLORER</span></div>
+            <div class="status-indicator"><span class="dot"></span> SYSTEM ONLINE</div>
+        </header>
+
+        <aside id="left-panel" class="panel">
+            <h3>FADEC TELEMETRY</h3>
+            <div class="data-grid" id="telemetry-grid">
+            </div>
+            
+            <h3>PROPULSION CONTROLS</h3>
+            <div class="control-group">
+                <button id="btn-startup" class="primary-btn">STARTUP SEQ</button>
+                <button id="btn-shutdown" class="danger-btn">SHUTDOWN</button>
+            </div>
+            <div class="slider-group">
+                <label for="throttle-slider">THROTTLE COMMAND (N1 %)</label>
+                <input type="range" id="throttle-slider" min="0" max="110" value="0" step="0.1">
+            </div>
+        </aside>
+
+        <aside id="right-panel" class="panel">
+            <h3>INSPECTION PROTOCOLS</h3>
+            <div class="control-group vertical">
+                <button id="btn-mode-standard" class="active">STANDARD VISUAL</button>
+                <button id="btn-mode-xray">X-RAY ANALYSIS</button>
+                <button id="btn-mode-wireframe">WIREFRAME MESH</button>
+                <button id="btn-mode-cutaway">INTERNAL CUTAWAY</button>
+                <button id="btn-mode-exploded">EXPLODED ASSEMBLY</button>
+            </div>
+            <div id="component-details" class="details-box hidden">
+                <h4 id="comp-name">SYSTEM COMPONENT</h4>
+                <p id="comp-desc">Awaiting component selection for detailed diagnostic data.</p>
+                <div class="data-row"><span>STATUS:</span> <span class="good" id="comp-status">NOMINAL</span></div>
+                <div class="data-row"><span>TEMP:</span> <span id="comp-temp">-- °C</span></div>
+                <div class="data-row"><span>STRESS:</span> <span id="comp-stress">-- MPa</span></div>
+            </div>
+        </aside>
+        
+        <div id="bottom-bar">
+            <div class="view-presets">
+                <span>CAMERA PRESETS:</span>
+                <button data-cam="iso">ISOMETRIC</button>
+                <button data-cam="front">INTAKE</button>
+                <button data-cam="side">PROFILE</button>
+                <button data-cam="exhaust">EXHAUST</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="webgl-canvas"></canvas>
+    
+    <script src="script.js"></script>
+</body>
+</html>
