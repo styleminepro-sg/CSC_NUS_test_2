@@ -467,3 +467,320 @@ class AirflowParticles {
         // Logic to be initialized in Part 3
     }
 }
+/**
+ * PART 3: FADEC SIMULATION, ADVANCED VISUAL MODES, AND TELEMETRY
+ * Injects autonomous engine control, particle systems, and structural view modes.
+ */
+
+class FADECSystem {
+    constructor(app) {
+        this.app = app;
+        this.status = 'OFF'; // OFF, SPOOLING, IGNITION, IDLE, RUNNING, SHUTDOWN
+        this.throttleInput = document.getElementById('throttle-slider');
+        this.targetN1 = 0;
+        this.targetN2 = 0;
+        this.engineTimer = 0;
+    }
+
+    initiateStartup() {
+        if (this.status === 'OFF' || this.status === 'SHUTDOWN') {
+            this.status = 'SPOOLING';
+            this.engineTimer = 0;
+            this.app.state.engineRunning = true;
+            this.updateSystemStatus('SPOOLING N2', 'warn');
+        }
+    }
+
+    initiateShutdown() {
+        if (this.status !== 'OFF' && this.status !== 'SHUTDOWN') {
+            this.status = 'SHUTDOWN';
+            this.throttleInput.value = 0;
+            this.updateSystemStatus('FUEL CUTOFF - SPOOLING DOWN', 'danger');
+        }
+    }
+
+    updateSystemStatus(msg, className) {
+        const indicator = document.querySelector('.status-indicator');
+        indicator.innerHTML = `<span class="dot" style="background-color: var(--accent-${className === 'warn' ? 'orange' : 'red'})"></span> ${msg}`;
+        indicator.style.color = className === 'warn' ? 'var(--accent-orange)' : 'var(--accent-red)';
+        
+        if(msg === 'SYSTEM ONLINE') {
+            indicator.innerHTML = `<span class="dot"></span> SYSTEM ONLINE`;
+            indicator.style.color = '#00e676';
+        }
+    }
+
+    update(deltaTime, state) {
+        // FADEC State Machine
+        switch(this.status) {
+            case 'SPOOLING':
+                this.targetN2 = 25; // Starter motor pushing N2
+                if (state.n2Rpm > 20) {
+                    this.status = 'IGNITION';
+                    this.updateSystemStatus('IGNITION & FUEL FLOW', 'warn');
+                }
+                break;
+            case 'IGNITION':
+                this.targetN2 = 60;
+                this.targetN1 = 20; // Core ignites, driving N1
+                if (state.n1Rpm > 18) {
+                    this.status = 'IDLE';
+                    this.updateSystemStatus('SYSTEM ONLINE', 'good');
+                }
+                break;
+            case 'IDLE':
+            case 'RUNNING':
+                const commandedN1 = parseFloat(this.throttleInput.value);
+                if (commandedN1 > 20) {
+                    this.status = 'RUNNING';
+                    this.targetN1 = commandedN1;
+                } else {
+                    this.status = 'IDLE';
+                    this.targetN1 = 20;
+                }
+                break;
+            case 'SHUTDOWN':
+                this.targetN1 = 0;
+                this.targetN2 = 0;
+                if (state.n1Rpm < 1 && state.n2Rpm < 1) {
+                    this.status = 'OFF';
+                    this.app.state.engineRunning = false;
+                    this.updateSystemStatus('SYSTEM OFFLINE', 'danger');
+                }
+                break;
+        }
+
+        // Smooth physics-based spooling interpolation overriding basic telemetry
+        if (this.status !== 'OFF') {
+            const n1Accel = this.status === 'SHUTDOWN' ? 2.5 : 4.0;
+            const n2Accel = this.status === 'SHUTDOWN' ? 3.0 : 6.0;
+            
+            state.n1Rpm += (this.targetN1 - state.n1Rpm) * deltaTime * (n1Accel / 10);
+            state.n2Rpm += (this.targetN2 - state.n2Rpm) * deltaTime * (n2Accel / 10);
+        }
+    }
+}
+
+class AdvancedDisplayManager {
+    constructor(app) {
+        this.app = app;
+        this.engine = app.engineModel;
+        this.originalMaterials = new Map();
+        this.originalPositions = new Map();
+        this.clippingPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+        
+        this.app.renderer.localClippingEnabled = true;
+
+        // Cache original states
+        this.engine.group.traverse((child) => {
+            if (child.isMesh) {
+                this.originalMaterials.set(child, child.material.clone());
+                this.originalPositions.set(child, child.position.clone());
+            }
+        });
+    }
+
+    setMode(mode) {
+        // Reset to standard first
+        this.resetEngine();
+
+        switch (mode) {
+            case 'wireframe':
+                this.applyWireframe();
+                break;
+            case 'xray':
+                this.applyXRay();
+                break;
+            case 'cutaway':
+                this.applyCutaway();
+                break;
+            case 'exploded':
+                this.applyExploded();
+                break;
+            case 'standard':
+            default:
+                // Already reset
+                break;
+        }
+    }
+
+    resetEngine() {
+        this.engine.group.traverse((child) => {
+            if (child.isMesh) {
+                const origMat = this.originalMaterials.get(child);
+                child.material.copy(origMat);
+                child.material.clippingPlanes = [];
+                child.material.needsUpdate = true;
+                
+                const origPos = this.originalPositions.get(child);
+                gsap.to(child.position, {
+                    x: origPos.x,
+                    y: origPos.y,
+                    z: origPos.z,
+                    duration: 1,
+                    ease: "power2.inOut"
+                });
+            }
+        });
+    }
+
+    applyWireframe() {
+        this.engine.group.traverse((child) => {
+            if (child.isMesh) {
+                child.material.wireframe = true;
+            }
+        });
+    }
+
+    applyXRay() {
+        this.engine.group.traverse((child) => {
+            if (child.isMesh) {
+                child.material.transparent = true;
+                child.material.opacity = 0.25;
+                child.material.depthWrite = false;
+                child.material.color.setHex(0x0099ff);
+                child.material.emissive.setHex(0x002244);
+            }
+        });
+    }
+
+    applyCutaway() {
+        this.engine.group.traverse((child) => {
+            if (child.isMesh) {
+                child.material.clippingPlanes = [this.clippingPlane];
+                child.material.clipShadows = true;
+                child.material.side = THREE.DoubleSide;
+            }
+        });
+    }
+
+    applyExploded() {
+        // Displace major assemblies along the Z axis
+        const parts = this.engine.parts;
+        
+        const offsets = {
+            fan: -6,
+            compressor: -2,
+            combustor: 0,
+            turbine: 3,
+            nozzle: 6
+        };
+
+        for (const [key, group] of Object.entries(parts)) {
+            if (offsets[key] !== undefined) {
+                group.traverse((child) => {
+                    if (child.isMesh) {
+                        const origPos = this.originalPositions.get(child);
+                        gsap.to(child.position, {
+                            z: origPos.z + offsets[key],
+                            duration: 1.5,
+                            ease: "power3.inOut"
+                        });
+                    }
+                });
+            }
+        }
+    }
+}
+
+// Particle system implementation from Part 2 stub
+AirflowParticles.prototype.init = function() {
+    this.geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(this.particles * 3);
+    this.velocities = [];
+
+    for (let i = 0; i < this.particles; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 4;     // x
+        positions[i * 3 + 1] = (Math.random() - 0.5) * 4; // y
+        positions[i * 3 + 2] = (Math.random() * 20) - 10; // z
+        this.velocities.push(0.1 + Math.random() * 0.2);
+    }
+
+    this.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    
+    this.material = new THREE.PointsMaterial({
+        color: 0x00aaff,
+        size: 0.08,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+
+    this.points = new THREE.Points(this.geometry, this.material);
+    this.scene.add(this.points);
+};
+
+AirflowParticles.prototype.update = function(deltaTime, state) {
+    if (!this.points) this.init();
+
+    const positions = this.geometry.attributes.position.array;
+    const speedMultiplier = (state.n1Rpm / 100) * 15 * deltaTime;
+
+    for (let i = 0; i < this.particles; i++) {
+        let zIndex = i * 3 + 2;
+        
+        // Move particles along Z axis
+        positions[zIndex] += this.velocities[i] * speedMultiplier;
+
+        // Reset particle to front if it passes the exhaust
+        if (positions[zIndex] > 15) {
+            positions[zIndex] = -5;
+            // Add slight turbulence
+            positions[i * 3] = (Math.random() - 0.5) * 4;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 4;
+        }
+    }
+    
+    // Color heat based on TGT (Exhaust temperature)
+    if (state.tgt > 300) {
+        const heatRatio = Math.min((state.tgt - 300) / 700, 1.0);
+        this.material.color.setRGB(heatRatio, 0.6 - (heatRatio * 0.4), 1.0 - heatRatio);
+    } else {
+        this.material.color.setHex(0x00aaff);
+    }
+
+    this.geometry.attributes.position.needsUpdate = true;
+};
+
+// Injection Script: Non-destructive prototype extension to integrate new features
+const originalSetupModules = AeroEngineApp.prototype.setupModules;
+AeroEngineApp.prototype.setupModules = function() {
+    originalSetupModules.call(this);
+    
+    this.fadec = new FADECSystem(this);
+    this.displayManager = new AdvancedDisplayManager(this);
+    this.particles = new AirflowParticles(this.scene);
+    
+    // Bind UI actions to new FADEC system
+    document.getElementById('btn-startup').addEventListener('click', () => {
+        this.fadec.initiateStartup();
+    });
+    
+    document.getElementById('btn-shutdown').addEventListener('click', () => {
+        this.fadec.initiateShutdown();
+    });
+};
+
+const originalSetMode = UIController.prototype.setMode;
+UIController.prototype.setMode = function(mode) {
+    originalSetMode.call(this, mode);
+    if (this.app && this.app.displayManager) {
+        this.app.displayManager.setMode(mode);
+    }
+};
+
+const originalAppAnimate = AeroEngineApp.prototype.animate;
+AeroEngineApp.prototype.animate = function() {
+    // Intercept render loop to inject FADEC and Particle updates
+    if (this.state.isLoaded) {
+        const dt = this.clock.getDelta();
+        // Reset clock delta so existing originalAnimate doesn't get 0 delta
+        this.clock.elapsedTime -= dt; 
+        
+        if (this.fadec) this.fadec.update(dt, this.state);
+        if (this.particles) this.particles.update(dt, this.state);
+    }
+    
+    originalAppAnimate.call(this);
+};
